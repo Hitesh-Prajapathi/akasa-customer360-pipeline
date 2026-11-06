@@ -1,174 +1,189 @@
-# Customer 360 Pipeline (Akasa Air DE Assessment)
+# Customer 360 Data Pipeline
 
 [![CI](https://github.com/Hitesh-Prajapathi/akasa-customer360-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/Hitesh-Prajapathi/akasa-customer360-pipeline/actions/workflows/ci.yml) [![Live dashboard](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://akasa-customer360-pipeline-yleacgfug2v7qqljs5qdbp.streamlit.app/) ![Python 3.12](https://img.shields.io/badge/python-3.12-blue) ![Tests](https://img.shields.io/badge/tests-124%20passing-brightgreen) ![DuckDB](https://img.shields.io/badge/engine-DuckDB-yellow)
 
-*This file is kept up to date as the work happens, in plain language. The author's own notes are in `readme_by_me`.*
+An e-commerce company keeps its customers in three systems that never talk to each other: a CRM (JSON), an order system (CSV) and a support desk (XML). I built a pipeline that ingests all three, cleans and checks them, merges them into **one trusted profile per customer**, and turns that into business insights on a live dashboard.
 
-**Live dashboard:** https://akasa-customer360-pipeline-yleacgfug2v7qqljs5qdbp.streamlit.app/  
-**Code:** https://github.com/Hitesh-Prajapathi/akasa-customer360-pipeline
-
-## The problem, in one breath
-An online store keeps its customers in three separate systems that never talked to each other. The CRM holds who people are, the order system holds what they spent, and the support desk holds how often they complained. Each system names things differently and stores them in a different format: JSON, CSV and XML. The job is to pull all three together into one clean profile per customer, catch the bad data along the way, and answer a few business questions:
-- Who are the top spenders?
-- How do customers split into Gold, Silver and Bronze?
-- Who keeps contacting support?
-- How does each city perform?
-
-## What we found when we looked at the data
-Before writing any code, we opened every file and counted.
-
-- **CRM:** 501 records but only 500 real customers. One customer (C0105) appears twice, word for word. Three customers have email addresses with no "@" in them.
-- **Orders:** 500 rows. One customer (C0310) has no order count. Another (C0420) shows a lifetime value of **minus 5,000**, which can't be right.
-- **Support:** 500 records, but one of them has a blank customer ID. Its 8 tickets can't be tied to anyone, and customer C0450 ends up with no support history at all.
-- The data is small (about 150 KB), so speed isn't the concern here. Correctness is.
-- The sample names in the problem document (Amit Sharma and others) aren't in the real files. We treat them as illustrations only.
-
-We wrote down the exact numbers we expect the quality report to show. When the pipeline runs, we can check its output against them instead of trusting it blindly.
-
-## Assumptions
-- "Revenue" means the customer's lifetime value from the order system.
-- The CRM is the master list of customers. Orders and tickets are attached to it, not the other way round.
-- The pipeline's internal stages are called **raw, clean and curated**. The usual names, bronze, silver and gold, are already taken by the problem's customer segments, and reusing them would confuse everyone.
-
-## Can the broken values be repaired? (EDA)
-We looked before deciding. The notebook is `notebooks/01_eda.ipynb`.
-- **C0310's missing order count:** we checked whether a customer's spend says anything about how many orders they placed. It doesn't. The correlation is 0.003, essentially zero. Any "smart" fill would just guess the average (15) and pretend it was data. With one missing value out of 500, we leave it blank and flag it.
-- **C0420's minus 5,000:** this could be a refund, a typo, or a sign error, and nothing in the data tells us which. Blank plus a flag, and it's left out of revenue totals.
-- **The support record with no customer ID:** it sits between C0449 and C0451 in the file, and C0450 is the only customer with no support record. So it is very probably C0450's. We still don't attach it automatically. A guess that turns out wrong corrupts data silently. Instead it goes to quarantine with a note saying "probably C0450, please confirm".
-- **When imputation *would* make sense:** with real volumes and columns that predict each other, the order of preference would be median or mode for a few gaps, then KNN or regression when related columns carry signal, then MICE or MissForest for many interacting gaps. None of that is true here.
-
-## Decisions made (and what we turned down)
-- **DuckDB instead of plain pandas.** The data is small today, but the realistic scenario is millions of rows and terabytes a day. Writing the logic as SQL means the same queries move to Spark, Athena or Redshift almost unchanged. pandas stays only where it's needed: reading the XML and feeding the dashboard.
-- **Three stages on disk: raw, clean, curated.** Every stage can be opened and checked, and any stage can be rebuilt from the one before it.
-- **Parquet inside the pipeline, JSON at the end.** Parquet is the standard compact, typed format for data lakes. The final customer file is also written as JSON, because that's the shape the problem asks for.
-- **Bad data is handled by severity.** A row we can't use at all, such as a duplicate copy or a record with no ID, is moved to quarantine. A row with one broken field keeps the customer and blanks only that field, with a flag explaining why. Nothing is ever silently deleted.
-- **Everyone is kept when merging.** All three systems are combined, and every customer carries three yes/no markers: is this person in the CRM, in orders, in support? A blank value then always has an explanation. Either there was no record, or the record was broken (and there's a flag saying so).
-- **Duplicates are handled the way production pipelines do it.** Every row is stamped with where it came from and in what order it arrived, plus a fingerprint of its content. If a customer appears twice, the most recently loaded version wins and the other moves to quarantine. It's labelled an *exact* copy (same fingerprint, which typically means a batch was loaded twice) or a *conflict* (same ID, different details, which needs a human).
-- **A proper email validator instead of a hand-written pattern**, run offline so results are fast and repeatable.
-- **Segment thresholds live in the config file.** Exactly 50,000 and exactly 100,000 both count as Silver, and customers whose revenue is unknown are labelled "Unknown" rather than forced into Bronze.
-- **Docker is the way to run it.** We don't know what machine the reviewers use. A container runs the same everywhere, and plain Python instructions remain as a backup.
-- *Turned down:* pandas-only (doesn't tell the scale story), inner joins (would quietly lose customers), filling gaps with 0 or averages (invents data), and auto-fixing the blank ID (a silent guess).
-
-## The less obvious things the data told us
-A second, deeper look turned up issues that per-column checks never catch:
-- **35 customers have zero support tickets but still have a "last ticket date".** Each value looks fine on its own; together they contradict each other. We keep both values and raise a warning, because we can't tell which one is wrong.
-- **One of the top 10 spenders (C0250) has a broken email.** If we had thrown away every row with a bad email, the "Top 10 customers" report would quietly have been wrong. This is the clearest argument for blanking just the bad field.
-- **The duplicate customer sits at the very end of the CRM file.** That's what a batch loaded twice by mistake looks like, which is exactly the case our "latest load wins" rule is designed for.
-- **The orders file was saved on Windows** (different line endings). Harmless for us, but it would trip up a naive reader.
-- **More than half of all customers have over 5 support tickets.** The ">5 tickets" list therefore isn't very selective. The threshold lives in the config so the business can tune it.
-
-## How the pipeline is built
-One command runs five steps, and each step only reads what the previous one wrote:
-
-```
- CRM (JSON)   Orders (CSV)   Support (XML)
-     │             │              │          1. read as-is, stamped with file + arrival order
-     ▼             ▼              ▼
- output/raw/   (Parquet, untouched text)
-     │                                       2. rename to one shared vocabulary (cust_id → customer_id)
-     ▼                                       3. check every row, label every problem
- output/clean/       ← usable rows, broken values blanked
- output/quarantine/  ← unusable rows (duplicate copy, blank ID), kept for review
-     │                                       4. join all three on customer_id, nobody dropped
-     ▼
- output/curated/customer_360  (Parquet + JSON)
-     │                                       5. business reports
-     ▼
- output/reports/  dq_report, dq_issues, top 10, segments, high-support, city revenue & counts
-```
-
-- **Reading.** Each file format has its own small reader. They all hand back the same shape, so adding a fourth source (say, Parquet from a data lake) means writing one new reader and touching nothing else.
-- **Naming.** The config file holds the translation table from each system's column names to ours. The code has no hardcoded column names.
-- **Checking.** Every row gets a list of the problems found. Each problem is either *reject* (the row can't be used), *field* (one value is bad, so blank it) or *warning* (keep it, just report it).
-- **Merging.** All three systems are combined. Each customer carries markers showing which systems know about them, and a list of every problem found in any of their records.
-- **Reporting.** Each business question is one short SQL query.
-- **Logging.** Everything is logged to the screen and to `logs/pipeline.log`.
-
-## Different systems, different column names
-Each system calls the customer something different: `customer_id`, `cust_id`, `customerId`, and tomorrow maybe `c_id` or `Customer ID`. We handle this in two layers, both in the config file rather than the code:
-1. **Tidy, then compare.** Names are lowercased and stripped of underscores, dashes and spaces before comparing. `customerId`, `Customer_ID` and `customer id` all become the same thing and match `customer_id` with no extra rules.
-2. **Known synonyms.** A shared list of aliases catches genuinely different words, such as `cust_id`, `c_id` or `client_id` for the customer, and `ltv` or `revenue` for lifetime value. A source can also pin an exact mapping if it needs to.
-
-If two columns could both be the customer ID, we stop rather than guess. A wrong guess would mix up customers silently. Unknown extra columns are logged so someone notices the source changed.
-
-## When a source changes shape: degrade, don't die
-A pipeline that receives data continuously can't afford to stop because one feed changed. So:
-- **A new column appears:** logged, ignored, and kept in the raw copy.
-- **A non-essential column disappears:** filled with blanks, every row flagged, and processing carries on.
-- **The customer ID column disappears:** that source's whole batch is set aside untouched, ready to replay once the mapping is fixed. The other sources still go through, and the report marks that source as failed. We tested it: with the ID column removed from the orders file, the run still finished, with 500 customers and orders marked failed.
-
-In a real streaming setup this becomes a schema registry (which decides what changes are allowed), a dead-letter queue (where bad batches wait), and a per-source circuit breaker (which pauses only the broken feed).
-
-## Newer additions (M3)
-- **A chat assistant on every dashboard page.** At the bottom of each page you can ask about what you're looking at, for example "why is successful lower than total?" or "what does high value, high friction mean for the business?". It only sees that page's numbers and a glossary of the terms. It's told to explain what the numbers mean and to say so when something isn't on the page, never to make things up. Email addresses are stripped out in code before anything leaves the app. Customer names are only shared on the lookup page, where that customer is the whole point. Without an API key the chat politely says it's unavailable, and the rest of the page works as normal. It runs on Groq's `openai/gpt-oss-120b`.
-- **A small database (SQLite) as the final home of the Customer 360**, loaded with *insert-or-update*. Running the pipeline twice doesn't create duplicates: the second run reports 0 new, 0 changed, 500 unchanged. The whole load is one transaction, so a crash halfway leaves the database exactly as it was. Every load is recorded in an audit table.
-- **New data arriving in small batches (a simulated stream).** A producer drops order-update files into `incoming/orders/`. The stream runner picks up only the files it hasn't seen yet, checks them with the same quality rules, sets bad rows aside, updates just the affected customers, and refreshes the reports and dashboard. A bookmark (a "watermark") records the last file processed. It's saved in the same transaction as the data, so a file is never skipped and never applied twice.
-- **Automatic checks on every push (CI).** GitHub runs the lint, the pipeline, all the tests and the Docker build. The quality report from each run can be downloaded from the run page.
-- *Known limit:* when a stream batch fixes a value (say C0310's missing order count), that customer's old quality flag isn't cleared until the next full batch run.
-
-## How to run it
-**With Docker (recommended, works on any OS):**
-```
-docker compose run --rm pipeline
-```
-Results appear in `output/`, logs in `logs/`.
-
-**The dashboard:** `docker compose up`, then open http://localhost:8501. The pipeline runs first and the dashboard starts once it has finished. Without Docker, run `streamlit run dashboard/app.py`. If there are no results yet, the dashboard runs the pipeline itself, so a hosted copy is a live pipeline, not a static picture.
-
-**The tests:** `pip install -r requirements-dev.txt`, then `pytest`. That runs 100 tests in about 2 seconds.
-
-**The simulated stream** (after a normal run):
-```
-python -m stream.producer --batches 5 --size 20   # drop 5 batches of order updates
-python run_stream.py --once                        # process only the new ones (omit --once to keep watching)
-```
-With Docker: `docker compose run --rm stream`.
-
-**The chat assistant:** put `GROQ_API_KEY = "gsk_..."` in `.streamlit/secrets.toml` (this file is never committed), or in the app's Secrets on Streamlit Cloud.
-
-The polished write-up for reviewers is in `DOCUMENTATION.md`.
-
-**Without Docker (needs Python 3.12):**
-```
-python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-python run_pipeline.py                                # optional: --config path/to/other.json
-```
-
-## How we know the data is right
-We wrote down the expected numbers *before* building, then checked the pipeline against them. They match exactly.
-
-| Check | Expected | Pipeline |
-|---|---|---|
-| Records read (all three files) | 1501 | 1501 |
-| Duplicates | 1 | 1 (C0105, exact copy) |
-| Invalid emails | 3 | 3 (C0125, C0250, C0375) |
-| Missing mandatory fields | 1 | 1 (C0310 order count) |
-| Negative revenue | 1 | 1 (C0420) |
-| Invalid customer IDs | 1 | 1 (blank support record, flagged "probably C0450") |
-| Successful records | 1494 | 1494 |
-| Customers in the 360 view | 500 | 500 |
-| Warnings (0 tickets but a ticket date) | 35 | 35 |
-
-- **Every input row is accounted for.** For each file, *rows read = clean rows + quarantined rows*. The pipeline stops with an error if that ever fails.
-- **Running it twice gives byte-for-byte identical files.** We checked this with file hashes. The "arrival time" stamp is the file's own timestamp, not the clock, which is what keeps reruns identical.
-- `output/reports/dq_issues.json` lists every problem row: what was wrong and what the pipeline did about it.
-
-**What the problem's sample report doesn't say, and how we read it:** a row can have more than one problem, so the problem counts can overlap. "Successful records" counts rows with no real problem. Warnings don't count against a row.
-
-## If this were in production
-_How the local setup maps to cloud services._
-
-## Timeline
-| When | What happened |
+| | |
 |---|---|
-| Start | Read the problem, profiled all three files, found 7 planted data issues, drafted the plan |
-| Round 1 | All 15 design decisions settled. EDA notebook confirmed nothing can be safely imputed |
-| M1 | Deeper EDA found 5 easy-to-miss issues. Baseline built (two helpers worked in parallel on the reports and the Docker setup). All expected numbers matched, reruns are identical, and it runs in Docker. Committed as `v1-baseline` |
-| M2 | Added column-name matching and "degrade, don't die" for broken sources. Four helpers worked in parallel: 100 tests, the dashboard, the reviewer documentation, plus logging upgrades. The full Docker stack works. Committed as `v2-brownie` |
-| M2+ | Dashboard grew from one page to four: Overview, Pipeline flow (row counts at every stage), Customer lookup (one customer across all three systems, raw records side by side), Quality & risk (issue drill-down, quarantine review, high-value customers with many tickets). Three helpers built the three new pages at the same time, one file each |
-| M2.6 | Published the code on GitHub and deployed the dashboard on Streamlit Community Cloud. The hosted copy runs the full pipeline itself on first load |
-| M3 | Three helpers in parallel, each on separate files: a page-aware chat assistant (Groq), CI on GitHub, then the SQLite insert-or-update load and the simulated stream. 124 tests pass, and CI passed on its first run |
+| **Live dashboard** | https://akasa-customer360-pipeline-yleacgfug2v7qqljs5qdbp.streamlit.app/ |
+| **Code** | https://github.com/Hitesh-Prajapathi/akasa-customer360-pipeline |
+| **CI runs** | https://github.com/Hitesh-Prajapathi/akasa-customer360-pipeline/actions |
+| **Stack** | Python 3.12 · DuckDB (SQL) · Parquet · SQLite · Streamlit · Groq LLM · Docker · GitHub Actions · pytest |
 
-## What we'd do next
-_Filled in at the end._
+---
+
+## 1. The pipeline at a glance
+
+```
+ SOURCES             STAGING / RAW          TRANSFORM + VALIDATE          LAKE ZONES             WAREHOUSE          BI
+┌──────────────┐    ┌──────────────┐     ┌───────────────────────┐    ┌───────────────┐     ┌────────────┐    ┌──────────────┐
+│ CRM   (JSON) │──┐ │ raw/*.parquet│     │ standardise names     │    │ clean/        │     │ SQLite     │    │ Streamlit    │
+│ Orders (CSV) │──┼▶│ as-is + file,│────▶│ quality rules + dedupe│───▶│ quarantine/   │────▶│ customer_  │───▶│ 4 pages +    │
+│ Support (XML)│──┘ │ time, row no.│     │ merge on customer_id  │    │ curated/ 360  │     │ 360 upsert │    │ LLM chat     │
+└──────────────┘    └──────────────┘     └───────────────────────┘    │ reports/      │     └────────────┘    └──────────────┘
+                                                                       └───────────────┘
+ stream batches ──▶ incoming/orders ──▶ same rules, only new files ──▶ upsert changed customers only
+```
+One command runs it all: `python run_pipeline.py`. Every step reads only the step before it, so any stage can be rebuilt or replayed.
+
+---
+
+## 2. How my pipeline maps to a standard data-engineering workflow
+
+| Stage | What it does | My components (files) | In production I would use |
+|---|---|---|---|
+| **Data sources** | Where the data is born | `DE-Customer360/` (JSON, CSV, XML) · `stream/producer.py` simulates new order batches | Operational DBs, APIs, Kafka/Kinesis topics |
+| **Staging / landing** | Keep an untouched copy of what arrived | `output/raw/*.parquet`, stamped with `_source_file`, `_ingested_at`, `_row_num` · `incoming/orders/` for stream files | S3 landing zone, partitioned by ingest date |
+| **Extractor** | Read each format into one shape | `customer360/readers.py`: `BaseReader` → `JsonReader` / `CsvReader` / `XmlReader`, chosen by file extension | Glue / Spark readers, Debezium CDC |
+| **Transformations** | Standardise, merge, aggregate | `standardize.py` (column aliases) · `merge.py` (full outer join) · `insights.py` (business SQL) | Spark SQL, or dbt models in the warehouse |
+| **Validators** | Decide what can be trusted | `quality.py` (rules, severity, dedupe, `email-validator`) · reconciliation in `pipeline.py` · schema-drift guard · 124 tests in CI | Great Expectations / dbt tests, data contracts, alerts |
+| **Loader** | Write results safely, without duplicates | `pipeline.py` (Parquet via DuckDB `COPY`) · `load.py` (SQLite **upsert** in one transaction) · `incremental.py` (stream loads) | `MERGE` into Redshift/Snowflake, Glue jobs |
+| **Data lake** | Organised zones of files | `output/raw`, `clean`, `quarantine`, `curated`, `reports` | S3 + Iceberg/Delta tables, Athena on top |
+| **Warehouse / pooling** | One queryable home for curated data | `output/warehouse/customer360.db`: `customer_360`, `load_runs` audit, `watermarks` | Redshift / Snowflake / BigQuery |
+| **BI & serving** | Answer business questions | `dashboard/` (4 Streamlit pages + a Groq chat per page) · `output/reports/*.json` | QuickSight / Power BI / Metabase on a semantic layer |
+| **Orchestration & ops** | Run, repeat, observe | `run_pipeline.py` · `run_stream.py` · `config/pipeline.json` · `logs/` · Docker Compose · GitHub Actions | Airflow / Step Functions, EventBridge triggers, CloudWatch |
+
+I named the lake zones raw/clean/curated on purpose. The problem already uses Gold/Silver/Bronze for *customer segments*, and reusing the medallion names would confuse everyone.
+
+---
+
+## 3. ETL or ELT?
+
+**Both, in different places.**
+- **Inside the lake it's ELT.** I extract and load the raw data first, untouched. Then I transform it with SQL on top of the stored copy. That's why I can replay any run from `raw/`.
+- **Into the warehouse it's ETL.** Only cleaned, validated, merged data is loaded into SQLite.
+- **In production** I'd lean towards ELT at scale. Land everything in S3, transform with dbt or Spark SQL, and keep a light ETL step only where bad data must never reach the warehouse (PII or contract violations). My transforms are already plain SQL in DuckDB, so they move to Spark, Athena or Redshift almost unchanged.
+
+---
+
+## 4. What the data told me (EDA: `notebooks/01_eda.ipynb`)
+
+I profiled every file before writing any pipeline code, and wrote down the numbers I expected the pipeline to produce.
+
+**The 7 planted issues**
+
+| Source | Issue | What I did |
+|---|---|---|
+| CRM | C0105 appears twice, identical | Kept the latest load, quarantined the copy as an *exact* duplicate |
+| CRM | 3 emails without "@" (C0125, C0250, C0375) | Kept the customer, blanked the email, flagged it |
+| Orders | C0310 has no order count | Left it blank and flagged it. Not imputed (see below) |
+| Orders | C0420 revenue = −5000 | Blanked and flagged it, and excluded it from revenue totals |
+| Support | One record with an empty customer ID (8 tickets) | Quarantined, with a hint: *probably C0450* (it sits between C0449 and C0451, and C0450 is the only customer with no support row) |
+
+**The 5 easy-to-miss findings**
+- **35 customers have 0 tickets but a "last ticket date".** Only a cross-field rule catches this, so I added it as a warning.
+- **C0250 is a top-10 spender with a broken email.** Dropping bad-email rows would have silently changed the Top-10 report. That's why I blank fields instead of deleting rows.
+- **The duplicate is the very last row of the file.** That's the classic sign of a batch loaded twice.
+- **The orders CSV has Windows line endings.** It's harmless here, but it breaks naive readers.
+- **268 of 499 customers have more than 5 tickets**, so that threshold isn't selective. I made it configurable.
+
+**Why I didn't impute.** Order count and revenue have a correlation of **0.003**, so any model would just return the median and pretend it was data. With 1 gap out of 500, blank plus a flag is the honest choice. With real volumes and real signal I'd use median → KNN → MICE/MissForest.
+
+**Result:** the pipeline matched my predictions exactly: 1501 records, 1 duplicate, 3 invalid emails, 1 missing field, 1 negative revenue, 1 invalid ID, **1494 successful, 500 customers**.
+
+---
+
+## 5. How I handled the ambiguities
+
+| Ambiguity | My decision |
+|---|---|
+| The example report says 1500 records | The real files hold 1501 (the duplicate). I report the truth |
+| "Revenue" isn't defined | Revenue = `lifetime_value` from the order system |
+| Segment ranges overlap at 50,000 and 100,000 | Both boundaries count as Silver. Unknown revenue becomes segment "Unknown", not Bronze |
+| Which system is the master list? | None is dropped. I used a full outer join, and every customer carries `in_crm`, `in_orders`, `in_support` |
+| A blank value: unknown, or broken? | The presence flags plus a `dq_flags` list explain every blank |
+| A row with several issues | Counts can overlap. "Successful" = rows with no error-level issue (warnings don't count against a row) |
+| A broken field vs a broken row | **Severity model:** *reject* (quarantine the row), *field* (blank one value), *warning* (keep and report) |
+| No ingestion timestamp in the data | I stamp each row with the file's own timestamp, so reruns stay byte-identical |
+| "Orders missing" never occurs in the real data | The code handles it anyway, and a test proves it with synthetic data |
+| Stream data with a bad value | Stricter than batch: the whole row is quarantined, so a bad value never overwrites a good one in the warehouse |
+
+---
+
+## 6. What each component does, in short
+
+- **`readers.py`:** one small class per format, all returning the same raw shape. A new format means one new class.
+- **`standardize.py`:** maps every system's column names to one vocabulary. Names are tidied first (lowercase, no `_ - space`), then matched against aliases in config. So `cust_id`, `customerId`, `c_id` and `Customer ID` all become `customer_id`. Two columns claiming the same field stops the run, because guessing is worse than stopping.
+- **`quality.py`:** gives every row a list of issues, splits clean from quarantine, removes duplicates by arrival order (latest wins, labelled *exact* vs *conflict* via a content hash), and builds the DQ report.
+- **`merge.py`:** builds the Customer 360 on `customer_id`, keeping everyone.
+- **`insights.py`:** Top 10 by revenue, Gold/Silver/Bronze segments, customers with more than 5 tickets, revenue and customer count by city. One SQL query each.
+- **`load.py`:** upserts into SQLite in a single transaction. A rerun reports *0 new, 0 changed, 500 unchanged*, and a crash midway rolls back completely.
+- **`incremental.py` + `run_stream.py`:** process only new batch files (tracked by a watermark saved in the same transaction), so each file is applied exactly once.
+- **`pipeline.py`:** runs the steps in order and checks *rows read = clean + quarantined* for every source. It stops if that ever fails.
+- **`dashboard/`:** Overview, Pipeline flow, Customer lookup and Quality & risk pages, plus an LLM assistant on each page.
+
+---
+
+## 7. Extras beyond the brief
+
+- **Degrade, don't die.**
+  - A renamed column is matched automatically.
+  - A missing non-key column is filled with blanks and flagged.
+  - A missing ID column quarantines only *that* source's batch, and the other sources still go through.
+- **"Ask about this page" (Groq, `openai/gpt-oss-120b`).**
+  - The assistant sees only what's on the current page, plus a glossary. Arithmetic is precomputed in code, so the model explains numbers rather than calculating them.
+  - Emails are never sent to the model, and names are sent only on the lookup page.
+  - Three "Try asking" buttons per page get a reviewer started.
+- **Business insight.** **171 Gold customers have more than 5 tickets, and they hold 54.7% of Gold revenue.** That's the group the business can least afford to lose.
+- **Simulated streaming.** Micro-batches of order updates are processed incrementally with the same quality rules.
+- **Warehouse upsert** with an audit table of every load.
+- **124 tests**, CI on every push (lint, pipeline run, tests, Docker build), byte-identical reruns, and Docker for any OS.
+
+---
+
+## 8. If this went to production
+
+| Component | One-line plan for real-world data (e.g. 5 TB/day) |
+|---|---|
+| Sources | Pull through CDC or event streams instead of files. Agree a data contract per source |
+| Staging | S3 landing zone, partitioned by ingest date, immutable, with lifecycle rules |
+| Extractor | Spark or Glue readers running in parallel across partitions. Schema registry for every feed |
+| Transformations | The same SQL on Spark or dbt. Incremental models instead of full rebuilds |
+| Validators | Great Expectations or dbt tests as gates. Alert on thresholds, and a circuit breaker per source |
+| Loader | `MERGE` into the warehouse, idempotent and keyed on `customer_id`. Dead-letter queue for bad batches |
+| Data lake | Iceberg/Delta tables for ACID and time travel, partitioned by date and city |
+| Warehouse | Redshift or Snowflake, with clustering on `customer_id` and the date columns |
+| BI | QuickSight or Power BI on a semantic layer, with row-level security for PII |
+| LLM assistant | Retrieval over a metrics catalogue, prompt and response logging, and PII masking at the gateway |
+| Orchestration | Airflow or Step Functions on EventBridge triggers. CloudWatch dashboards and alerts |
+
+---
+
+## 9. Run it
+
+**Docker (any OS):**
+```bash
+docker compose run --rm pipeline        # run the pipeline → output/ and logs/
+docker compose up                       # pipeline, then dashboard at http://localhost:8501
+docker compose run --rm stream          # process new stream batches
+```
+
+**Plain Python 3.12:**
+```bash
+pip install -r requirements-dev.txt
+python run_pipeline.py                  # batch run
+streamlit run dashboard/app.py          # dashboard
+python -m stream.producer --batches 5   # drop 5 order-update batches
+python run_stream.py --once             # process only the new ones
+pytest                                  # 124 tests
+```
+
+**LLM chat:** add `GROQ_API_KEY = "gsk_..."` to `.streamlit/secrets.toml` (never committed), or to the app's Secrets on Streamlit Cloud. Without a key, the dashboard still works and the chat says it's unavailable.
+
+**Configuration:** `config/pipeline.json` holds the sources, column aliases, validation rules, segment thresholds and paths. Changing any of them needs no code change.
+
+---
+
+## 10. Project layout
+
+```
+config/pipeline.json     every rule, path and threshold
+customer360/             the pipeline: readers · standardize · quality · merge · insights · load · incremental · pipeline
+dashboard/               Streamlit app, 3 extra pages, LLM chat
+stream/producer.py       simulated order stream
+notebooks/01_eda.ipynb   the data investigation
+tests/                   124 pytest tests
+DE-Customer360/          input data + problem statement
+run_pipeline.py · run_stream.py · Dockerfile · docker-compose.yml · .github/workflows/ci.yml
+```

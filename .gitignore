@@ -8,3 +8,7 @@ __pycache__/
 .pytest_cache/
 .streamlit/secrets.toml
 incoming/
+
+# Working notes kept local only
+CONTEXT.md
+DOCUMENTATION.md
