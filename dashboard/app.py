@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT / "dashboard"))  # chat.py / page_context.py
 
 import page_context as pc  # noqa: E402
 from chat import render_chat  # noqa: E402
+from common import render_run_info  # noqa: E402
 
 from customer360.pipeline import run  # noqa: E402  (needs ROOT on sys.path first)
 
@@ -205,6 +206,7 @@ def main() -> None:
         run_pipeline()
 
     st.sidebar.header("Controls")
+    render_run_info()  # same "Last pipeline run" block as the other pages
     if st.sidebar.button("Re-run pipeline") and run_pipeline():
         st.sidebar.success("Pipeline finished.")
 

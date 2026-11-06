@@ -1,5 +1,7 @@
 # Customer 360 Pipeline (Akasa Air DE Assessment)
 
+[![CI](https://github.com/Hitesh-Prajapathi/akasa-customer360-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/Hitesh-Prajapathi/akasa-customer360-pipeline/actions/workflows/ci.yml) [![Live dashboard](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://akasa-customer360-pipeline-yleacgfug2v7qqljs5qdbp.streamlit.app/) ![Python 3.12](https://img.shields.io/badge/python-3.12-blue) ![Tests](https://img.shields.io/badge/tests-124%20passing-brightgreen) ![DuckDB](https://img.shields.io/badge/engine-DuckDB-yellow)
+
 *This file is kept up to date as the work happens, in plain language. The author's own notes are in `readme_by_me`.*
 
 **Live dashboard:** https://akasa-customer360-pipeline-yleacgfug2v7qqljs5qdbp.streamlit.app/  

@@ -14,6 +14,30 @@ import streamlit as st
 GROQ_MODEL = "openai/gpt-oss-120b"
 MAX_TURNS = 6  # user+assistant pairs of history sent with each question
 
+# "Try asking" buttons shown above the chat input, per page key.
+SUGGESTIONS = {
+    "overview": [
+        "Why is successful_records lower than total_records?",
+        "Which city brings in the most revenue, and is it driven by customer count?",
+        "What does the segment split say about our customer base?",
+    ],
+    "pipeline": [
+        "Walk me through what happened to each source.",
+        "What does 'balanced' mean and why does it matter?",
+        "Why was a support row quarantined?",
+    ],
+    "lookup": [
+        "Summarise this customer and any data quality problems.",
+        "Which systems know about this customer, and what is missing?",
+        "Should we be worried about this customer?",
+    ],
+    "quality": [
+        "What does the high value, high friction number mean, and what should we do?",
+        "Which data quality issue matters most for the business?",
+        "What do the order recency numbers tell us?",
+    ],
+}
+
 SYSTEM_TEMPLATE = """You are an analyst assistant for the Customer 360 dashboard \
 (customer data merged from CRM, orders and support systems, with data quality checks).
 The user is looking at the "{page_title}" page.
@@ -122,7 +146,18 @@ def render_chat(page_key: str, page_title: str, context: dict, glossary: dict) -
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-    question = st.chat_input("Ask a question about this page", key=f"chat_input_{page_key}")
+    # Suggestion buttons: a click returns True for this run only, like a submitted chat_input.
+    clicked = None
+    suggestions = SUGGESTIONS.get(page_key, [])
+    if suggestions:
+        st.caption("Try asking:")
+        for i, (col, text) in enumerate(zip(st.columns(len(suggestions)), suggestions)):
+            if col.button(text, key=f"suggest_{page_key}_{i}"):
+                clicked = text
+
+    # Typed question or clicked suggestion feed the same answer path below.
+    typed = st.chat_input("Ask a question about this page", key=f"chat_input_{page_key}")
+    question = typed or clicked
     if not question:
         return
 

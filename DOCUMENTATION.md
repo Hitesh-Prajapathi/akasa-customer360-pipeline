@@ -1,5 +1,7 @@
 # Customer 360 Pipeline
 
+[![CI](https://github.com/Hitesh-Prajapathi/akasa-customer360-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/Hitesh-Prajapathi/akasa-customer360-pipeline/actions/workflows/ci.yml) [![Live dashboard](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://akasa-customer360-pipeline-yleacgfug2v7qqljs5qdbp.streamlit.app/) ![Python 3.12](https://img.shields.io/badge/python-3.12-blue) ![Tests](https://img.shields.io/badge/tests-124%20passing-brightgreen) ![DuckDB](https://img.shields.io/badge/engine-DuckDB-yellow)
+
 A small, careful data pipeline built for the Akasa Air data engineering assessment. This page explains what it does, how to run it, how it works, and how it would grow in production.
 
 **Live dashboard:** https://akasa-customer360-pipeline-yleacgfug2v7qqljs5qdbp.streamlit.app/  

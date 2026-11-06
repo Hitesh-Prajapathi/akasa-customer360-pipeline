@@ -1,7 +1,9 @@
 """Shared loaders for every dashboard page (dashboard/app.py and dashboard/pages/*.py)."""
 import json
 import os
+import sqlite3
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -33,6 +35,38 @@ def ensure_outputs() -> None:
         with st.spinner("Running the Customer 360 pipeline..."):
             run(CONFIG_PATH)
         st.cache_data.clear()
+    render_run_info()
+
+
+def render_run_info() -> None:
+    """Small sidebar block: when the pipeline last ran and what it produced."""
+    st.sidebar.markdown("**Last pipeline run**")
+    path = output_dir() / "reports" / "dq_report.json"
+    if not path.exists():
+        st.sidebar.caption("No DQ report found.")
+        return
+    # Run time = DQ report mtime, shown in UTC.
+    ran = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    rep = json.loads(path.read_text())
+    balanced = all(r.get("balanced") for r in rep.get("reconciliation", {}).values())
+    st.sidebar.caption(
+        f"{ran:%d %b %Y, %H:%M} UTC  \n"
+        f"{rep.get('total_records', 0):,} records · {rep.get('successful_records', 0):,} successful · "
+        f"{rep.get('customer_360_records', 0):,} customers  \n"
+        f"{'✓' if balanced else '✗'} all sources balanced"
+    )
+    # Warehouse load info is optional; never let a missing/locked db break the page.
+    db = output_dir() / "warehouse" / "customer360.db"
+    if db.exists():
+        try:
+            with sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=1) as con:
+                row = con.execute(
+                    "SELECT mode, run_at FROM load_runs ORDER BY run_id DESC LIMIT 1"
+                ).fetchone()
+            if row:
+                st.sidebar.caption(f"Warehouse: last load {row[0]} at {row[1]}")
+        except Exception:
+            pass
 
 
 @st.cache_data
