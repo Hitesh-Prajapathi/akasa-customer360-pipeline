@@ -7,12 +7,20 @@ import streamlit as st
 
 # Make dashboard/common.py importable when Streamlit runs this page on its own.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from chat import render_chat  # noqa: E402
 from common import (  # noqa: E402
     ensure_outputs,
     load_config,
     load_customer_360,
     load_parquet,
     load_report,
+)
+from page_context import (  # noqa: E402
+    glossary_for,
+    high_value_high_friction,
+    issue_counts,
+    quality_context,
+    recency,
 )
 
 ensure_outputs()
@@ -29,8 +37,7 @@ if dq.empty:
     st.info("No data quality issues were recorded.")
 else:
     # One row per (record, issue)
-    exploded = dq.explode("dq_issues").rename(columns={"dq_issues": "issue"}).dropna(subset=["issue"])
-    counts = exploded.groupby(["issue", "source"]).size().reset_index(name="count")
+    counts = issue_counts(dq.to_dict("records"))  # one row per (issue, source)
 
     chart = alt.Chart(counts).mark_bar().encode(
         x=alt.X("count:Q", title="Rows"),
@@ -54,11 +61,13 @@ st.caption(
     "Quarantined rows are kept untouched for review and replay; they never reach the clean layer. "
     "A support row with a blank customer ID carries a `suggested_customer_id` to help fix it."
 )
+quarantine = {}
 for source in ["crm", "orders", "support"]:
     try:
         q = load_parquet("quarantine", source).drop(columns=["_ingested_at"], errors="ignore")
     except FileNotFoundError:
         continue
+    quarantine[source] = q
     st.markdown(f"**{source}** — {len(q)} row(s)")
     if q.empty:
         continue
@@ -77,10 +86,7 @@ threshold = load_config().get("insights", {}).get("high_support_above", 5)
 
 # (1) High value, high friction
 st.subheader("High value, high friction")
-gold = c360[c360["segment"] == "Gold"]
-risky = gold[gold["support_tickets"].fillna(0) > threshold].sort_values("lifetime_value", ascending=False)
-gold_total = gold["lifetime_value"].sum()
-share = risky["lifetime_value"].sum() / gold_total if gold_total else 0
+risky, share = high_value_high_friction(c360, threshold)
 
 c1, c2 = st.columns(2)
 c1.metric(f"Gold customers with > {threshold} tickets", len(risky))
@@ -104,12 +110,10 @@ st.altair_chart(heat + labels, width="stretch")
 
 # (3) Recency
 st.subheader("Recency")
-dates = pd.to_datetime(c360["last_order_date"], errors="coerce")
-ref = dates.max()
-if pd.isna(ref):
+rec, ref = recency(c360)
+if rec is None:
     st.info("No order dates available.")
 else:
-    rec = c360.assign(days_since=(ref - dates).dt.days).dropna(subset=["days_since"])
     st.caption(f"Days since last order, measured from the latest order date in the data ({ref.date()}).")
     hist = alt.Chart(rec).mark_bar().encode(
         x=alt.X("days_since:Q", bin=alt.Bin(step=30), title="Days since last order (30-day bins)"),
@@ -119,3 +123,7 @@ else:
     st.altair_chart(hist, width="stretch")
     inactive = rec[(rec["segment"] == "Gold") & (rec["days_since"] > 180)]
     st.metric("Gold customers inactive > 180 days", len(inactive))
+
+cfg = load_config()
+render_chat("quality", "Quality & risk", quality_context(c360, load_report("dq_issues"), quarantine, cfg),
+            glossary_for("quality", cfg))

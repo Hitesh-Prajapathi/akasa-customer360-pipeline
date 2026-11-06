@@ -6,24 +6,20 @@ import streamlit as st
 
 # Make dashboard/common.py importable when Streamlit runs this page on its own.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import ensure_outputs, load_customer_360, load_parquet, load_report  # noqa: E402
+from chat import render_chat  # noqa: E402
+from common import (  # noqa: E402
+    ensure_outputs,
+    load_config,
+    load_customer_360,
+    load_parquet,
+    load_report,
+)
+from page_context import FLAG_TEXT, glossary_for, lookup_context  # noqa: E402
 
 ensure_outputs()
 
 st.title("Customer lookup")
 st.caption("Everything we know about one customer, across all three systems.")
-
-# Plain-English meaning of each data quality flag
-FLAG_TEXT = {
-    "invalid_email": "The email address is not in a valid format, so we cannot contact this customer by email.",
-    "missing_total_orders": "The orders system has no order count for this customer, so total orders is unknown.",
-    "negative_lifetime_value": "Lifetime value came through negative, which is not possible; it was set to unknown.",
-    "no_support_record": "This customer has never appeared in the support system.",
-    "no_order_record": "This customer has no record in the orders system.",
-    "not_in_crm": "This ID appears in orders or support but not in the CRM, so we have no profile details.",
-    "ticket_date_without_tickets": "A last ticket date exists even though the ticket count is zero or missing.",
-    "duplicate": "This customer appears more than once in a source; only one copy was kept.",
-}
 
 c360 = load_customer_360()
 ids = sorted(c360["customer_id"].dropna().unique())
@@ -66,9 +62,11 @@ else:
 
 # Raw rows from every source (all copies, so duplicates show up)
 st.subheader("Raw records from each source")
+raw_matches = {}
 for source, id_col in [("crm", "customer_id"), ("orders", "cust_id"), ("support", "customerId")]:
     raw = load_parquet("raw", source)
     matches = raw[raw[id_col].astype(str).str.strip() == cid]
+    raw_matches[source] = matches
     st.markdown(f"**{source.upper()}** ({len(matches)} row(s))")
     if matches.empty:
         st.caption("No raw rows for this ID.")
@@ -87,3 +85,7 @@ if issues.empty:
     st.caption("No issue rows mention this customer.")
 else:
     st.dataframe(issues.astype(str), width="stretch", hide_index=True)
+
+# Chat sees only this customer (name allowed on this page; email always stripped).
+render_chat("lookup", "Customer lookup", lookup_context(row, raw_matches, issues),
+            glossary_for("lookup", load_config()))

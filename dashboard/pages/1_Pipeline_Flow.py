@@ -7,7 +7,9 @@ import streamlit as st
 
 # Make dashboard/common.py importable when Streamlit runs this page on its own.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from chat import render_chat  # noqa: E402
 from common import ensure_outputs, load_config, load_parquet, load_report  # noqa: E402
+from page_context import glossary_for, pipeline_context  # noqa: E402
 
 ensure_outputs()
 
@@ -67,6 +69,7 @@ st.subheader("Source status")
 st.dataframe(pd.DataFrame({"source": list(status), "status": list(status.values())}), hide_index=True)
 
 # (5) Look at the data in any layer
+peek = None
 with st.expander("Peek at each layer"):
     src = st.selectbox("Source", sources)
     layer = st.radio("Layer", ["raw", "clean", "quarantine"], horizontal=True)
@@ -74,5 +77,9 @@ with st.expander("Peek at each layer"):
         data = load_parquet(layer, src)
         st.caption(f"{len(data)} rows in {layer}/{src}")
         st.dataframe(data.drop(columns=["_ingested_at"], errors="ignore").head(50), width="stretch")
+        peek = {"source": src, "layer": layer, "data": data}
     except FileNotFoundError:
         st.info(f"No {layer} file for {src}.")
+
+cfg = load_config()
+render_chat("pipeline", "Pipeline flow", pipeline_context(dq, cfg, peek), glossary_for("pipeline", cfg))

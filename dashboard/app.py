@@ -20,11 +20,15 @@ import streamlit as st
 ROOT = Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "dashboard"))  # chat.py / page_context.py
+
+import page_context as pc  # noqa: E402
+from chat import render_chat  # noqa: E402
 
 from customer360.pipeline import run  # noqa: E402  (needs ROOT on sys.path first)
 
 CONFIG_PATH = "config/pipeline.json"
-SEGMENT_ORDER = ["Gold", "Silver", "Bronze", "Unknown"]
+SEGMENT_ORDER = pc.SEGMENT_ORDER
 
 
 # ---------- loading ----------
@@ -131,9 +135,7 @@ def section_data_quality(reports_dir: str) -> None:
 
 def section_city(df: pd.DataFrame) -> None:
     st.header("Revenue by city")
-    by_city = (df.groupby("city")
-                 .agg(total_revenue=("lifetime_value", "sum"), customer_count=("customer_id", "count"))
-                 .reset_index())
+    by_city = pc.city_summary(df)
 
     left, right = st.columns(2)
     with left:
@@ -160,10 +162,7 @@ def section_segments(df: pd.DataFrame, cfg: dict) -> None:
     st.caption(f"Gold: revenue > {seg['gold_above']:,} · Silver: {seg['silver_from']:,} to "
                f"{seg['gold_above']:,} · Bronze: below {seg['silver_from']:,} · Unknown: no order data")
 
-    summary = (df.groupby("segment")
-               .agg(customer_count=("customer_id", "count"), total_revenue=("lifetime_value", "sum"))
-               .reindex(SEGMENT_ORDER, fill_value=0)  # fixed business order, empty segments shown as 0
-               .reset_index())
+    summary = pc.segment_summary(df)  # fixed business order, empty segments shown as 0
 
     left, right = st.columns(2)
     for col, field, title in [(left, "customer_count", "Customers"), (right, "total_revenue", "Revenue")]:
@@ -182,19 +181,14 @@ def section_segments(df: pd.DataFrame, cfg: dict) -> None:
 def section_top_customers(df: pd.DataFrame, cfg: dict) -> None:
     top_n = cfg["insights"]["top_n"]
     st.header(f"Top {top_n} customers by revenue")
-    top = (df.dropna(subset=["lifetime_value"])
-             .sort_values(["lifetime_value", "customer_id"], ascending=[False, True])  # id breaks ties
-             .head(top_n)[["customer_id", "name", "city", "lifetime_value"]])
-    top.insert(0, "rank", range(1, len(top) + 1))
+    top = pc.top_customers(df, top_n)
     st.dataframe(top, width="stretch", hide_index=True)
 
 
 def section_high_support(df: pd.DataFrame, cfg: dict) -> None:
     threshold = cfg["insights"]["high_support_above"]
     st.header("High-support customers")
-    high = (df[df["support_tickets"] > threshold]  # NULL tickets never qualify
-              .sort_values(["support_tickets", "customer_id"], ascending=[False, True])
-              [["customer_id", "name", "city", "support_tickets", "last_ticket_date"]])
+    high = pc.high_support(df, threshold)  # NULL tickets never qualify
     st.metric(f"Customers with more than {threshold} tickets", len(high))
     st.dataframe(high, width="stretch", hide_index=True)
 
@@ -239,6 +233,11 @@ def main() -> None:
     section_top_customers(df, cfg)
     st.divider()
     section_high_support(df, cfg)
+
+    # Chat sees exactly what this page shows (filtered by city), without emails or names.
+    context = pc.overview_context(df, load_report(reports_dir, "dq_report"),
+                                  load_report(reports_dir, "dq_issues"), cfg, selected)
+    render_chat("overview", "Overview", context, pc.glossary_for("overview", cfg))
 
 
 main()
