@@ -21,3 +21,16 @@ services:
     depends_on:
       pipeline:
         condition: service_completed_successfully
+
+  # Incremental runner: polls ./incoming/orders for new micro-batches (python -m stream.producer
+  # writes them) and upserts them into the SQLite warehouse built by the pipeline service.
+  stream:
+    image: customer360
+    command: ["python", "run_stream.py"]
+    volumes:
+      - ./incoming:/app/incoming
+      - ./output:/app/output
+      - ./logs:/app/logs
+    depends_on:
+      pipeline:
+        condition: service_completed_successfully

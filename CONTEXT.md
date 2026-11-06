@@ -101,6 +101,9 @@ Docs: `DOCUMENTATION.md` (reviewer-facing, polished). `README.md` (running log).
 
 Exit: tests green, `docker compose up` shows the dashboard at :8501, numbers on the dashboard equal `dq_report.json`.
 
+### M3, status: M3.1 chatbot ✅ · M3.2 CI ✅ (green on first run) · M3.3 SQLite upsert ✅ · M3.4 incremental + stream ✅ · M3.5 data contracts ⏳
+124 tests. Warehouse counts are logged and stored in `load_runs`, NOT in dq_report (that keeps reruns byte-identical); `output/warehouse/` is excluded from the hash test. Stream rows with any issue are quarantined (stricter than batch). Known limit: stale dq_flags after a stream fix. Pushing workflow files needs the gh `workflow` scope (granted).
+
 ### M3, Hardening and upgrades, one commit each, pick by time
 
 Upsert/merge into SQLite (idempotent load, ACID talking point) · Parquet outputs · schema-drift handling (unknown or missing columns) · CLI args · Dockerfile · CI yaml · incremental runs via watermark · data contracts per source · simulated streaming of new orders.
@@ -214,6 +217,12 @@ On a change: (1) log it here, (2) find the lowest affected step, (3) change only
 | Round 1 | D9 ingestion-order dedupe with hash | Production pattern: same as replayed/double-loaded batches | raw, quality |
 | Round 1 | D10 email-validator | Handles real-world email forms better than a regex | quality |
 | Round 1 | D15 Docker deliverable, py3.12 | OS-independent for evaluators | packaging |
+| M3 | D16 chatbot context = current page's data + glossary only (no vector DB) | Focused, small, explainable | dashboard |
+| M3 | D17 "Ask about this page" panel at the bottom of each page | The question sits next to the charts | dashboard |
+| M3 | D18 no emails ever sent to the LLM; names only on the lookup page; stripped in code | Data governance for AI | dashboard |
+| M3 | D19 no key / API error → "chat unavailable" panel, page still works (no model fallback) | Reliability | dashboard |
+| M3 | D20 grounded answers that interpret the numbers (what they mean, why they matter), cite metrics, moderate length | Useful, not hallucinated | dashboard |
+| M3 | Parallel split: A chatbot (dashboard + requirements), B CI (.github), C SQLite upsert, then incremental/stream (pipeline). M3.5 contracts deferred until C finishes (same files) | No file overlap | |
 | M1 | Deep EDA: 35 rows with 0 tickets but a ticket date → `warning_rules` in config. C0250 (top-10) has a bad email, which justifies field-level nulling | Hidden issues | config, quality |
 | M1 | Built in parallel: insights.py + Docker packaging by agents, core by Claude | Speed | all |
 | Round 1 | EDA: nothing imputable | corr = 0.003. Blank ID inferable only by position → suggestion, not auto-fix | quality |

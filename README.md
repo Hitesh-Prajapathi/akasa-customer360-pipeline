@@ -97,6 +97,13 @@ A pipeline that receives data continuously can't afford to stop because one feed
 
 In a real streaming setup this becomes a schema registry (which decides what changes are allowed), a dead-letter queue (where bad batches wait), and a per-source circuit breaker (which pauses only the broken feed).
 
+## Newer additions (M3)
+- **A chat assistant on every dashboard page.** At the bottom of each page you can ask about what you're looking at, for example "why is successful lower than total?" or "what does high value, high friction mean for the business?". It only sees that page's numbers and a glossary of the terms. It's told to explain what the numbers mean and to say so when something isn't on the page, never to make things up. Email addresses are stripped out in code before anything leaves the app. Customer names are only shared on the lookup page, where that customer is the whole point. Without an API key the chat politely says it's unavailable, and the rest of the page works as normal. It runs on Groq's `llama-3.3-70b-versatile`.
+- **A small database (SQLite) as the final home of the Customer 360**, loaded with *insert-or-update*. Running the pipeline twice doesn't create duplicates: the second run reports 0 new, 0 changed, 500 unchanged. The whole load is one transaction, so a crash halfway leaves the database exactly as it was. Every load is recorded in an audit table.
+- **New data arriving in small batches (a simulated stream).** A producer drops order-update files into `incoming/orders/`. The stream runner picks up only the files it hasn't seen yet, checks them with the same quality rules, sets bad rows aside, updates just the affected customers, and refreshes the reports and dashboard. A bookmark (a "watermark") records the last file processed. It's saved in the same transaction as the data, so a file is never skipped and never applied twice.
+- **Automatic checks on every push (CI).** GitHub runs the lint, the pipeline, all the tests and the Docker build. The quality report from each run can be downloaded from the run page.
+- *Known limit:* when a stream batch fixes a value (say C0310's missing order count), that customer's old quality flag isn't cleared until the next full batch run.
+
 ## How to run it
 **With Docker (recommended, works on any OS):**
 ```
@@ -107,6 +114,15 @@ Results appear in `output/`, logs in `logs/`.
 **The dashboard:** `docker compose up`, then open http://localhost:8501. The pipeline runs first and the dashboard starts once it has finished. Without Docker, run `streamlit run dashboard/app.py`. If there are no results yet, the dashboard runs the pipeline itself, so a hosted copy is a live pipeline, not a static picture.
 
 **The tests:** `pip install -r requirements-dev.txt`, then `pytest`. That runs 100 tests in about 2 seconds.
+
+**The simulated stream** (after a normal run):
+```
+python -m stream.producer --batches 5 --size 20   # drop 5 batches of order updates
+python run_stream.py --once                        # process only the new ones (omit --once to keep watching)
+```
+With Docker: `docker compose run --rm stream`.
+
+**The chat assistant:** put `GROQ_API_KEY = "gsk_..."` in `.streamlit/secrets.toml` (this file is never committed), or in the app's Secrets on Streamlit Cloud.
 
 The polished write-up for reviewers is in `DOCUMENTATION.md`.
 
@@ -150,6 +166,7 @@ _How the local setup maps to cloud services._
 | M2 | Added column-name matching and "degrade, don't die" for broken sources. Four helpers worked in parallel: 100 tests, the dashboard, the reviewer documentation, plus logging upgrades. The full Docker stack works. Committed as `v2-brownie` |
 | M2+ | Dashboard grew from one page to four: Overview, Pipeline flow (row counts at every stage), Customer lookup (one customer across all three systems, raw records side by side), Quality & risk (issue drill-down, quarantine review, high-value customers with many tickets). Three helpers built the three new pages at the same time, one file each |
 | M2.6 | Published the code on GitHub and deployed the dashboard on Streamlit Community Cloud. The hosted copy runs the full pipeline itself on first load |
+| M3 | Three helpers in parallel, each on separate files: a page-aware chat assistant (Groq), CI on GitHub, then the SQLite insert-or-update load and the simulated stream. 124 tests pass, and CI passed on its first run |
 
 ## What we'd do next
 _Filled in at the end._

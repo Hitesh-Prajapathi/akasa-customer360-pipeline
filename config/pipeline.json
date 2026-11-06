@@ -148,5 +148,14 @@
   "insights": {
     "top_n": 10,
     "high_support_above": 5
+  },
+  "warehouse": {
+    "enabled": true,
+    "db_path": "output/warehouse/customer360.db"
+  },
+  "stream": {
+    "source": "orders.csv",
+    "incoming_dir": "incoming/orders",
+    "poll_seconds": 5
   }
 }

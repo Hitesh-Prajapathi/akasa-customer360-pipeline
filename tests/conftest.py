@@ -61,6 +61,9 @@ def write_config(tmp_path, input_dir: str, out_name: str = "output") -> str:
     cfg["input_dir"] = os.path.abspath(input_dir)
     cfg["output_dir"] = str(tmp_path / out_name)
     cfg["log_file"] = str(tmp_path / "logs" / "pipeline.log")
+    # Keep the SQLite warehouse and the stream inbox inside tmp_path too.
+    cfg["warehouse"]["db_path"] = str(tmp_path / out_name / "warehouse" / "customer360.db")
+    cfg["stream"]["incoming_dir"] = str(tmp_path / "incoming" / "orders")
     path = tmp_path / "pipeline.json"
     path.write_text(json.dumps(cfg))
     return str(path)

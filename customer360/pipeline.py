@@ -11,6 +11,7 @@ import time
 import duckdb
 
 from .insights import generate_insights
+from .load import load_customer_360
 from .logger import setup_logging
 from .merge import build_customer_360
 from .quality import (
@@ -92,6 +93,13 @@ def run(config_path: str) -> dict:
     _copy(con, "customer_360", f"{out}/curated/customer_360.json", fmt="json")
     log.info("customer_360 rows=%d (%.3fs)", n_360, time.perf_counter() - t0)
 
+    # Warehouse load (upsert into SQLite). The counts go to the log, the load_runs audit
+    # table and run()'s result, NOT into dq_report.json: on a rerun they legitimately
+    # change (500 inserted -> 500 unchanged), and dq_report.json must stay byte-identical.
+    warehouse = None
+    if cfg.get("warehouse", {}).get("enabled"):
+        warehouse = load_customer_360(con, "customer_360", cfg["warehouse"]["db_path"])
+
     # Step 3 outputs: summary report + one line per problem row
     report = build_dq_report(con, flagged, warnings)
     report["customer_360_records"] = n_360
@@ -107,7 +115,7 @@ def run(config_path: str) -> dict:
     insight_counts = generate_insights(con, f"{out}/curated/customer_360.parquet", f"{out}/reports", cfg)
 
     log.info("Pipeline finished in %.2fs", time.perf_counter() - started)
-    return {"dq_report": report, "insights": insight_counts}
+    return {"dq_report": report, "insights": insight_counts, "warehouse": warehouse}
 
 
 def _empty_std_table(con, std_table: str, raw_table: str, fields: list[str]) -> None:

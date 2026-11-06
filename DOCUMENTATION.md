@@ -167,7 +167,7 @@ We wrote the expected numbers down before building. The output matches all of th
 - **Reconciliation.** For each file, rows read = clean rows + quarantined rows. CRM is 501 = 500 + 1, orders is 500 = 500 + 0, support is 500 = 499 + 1. The run stops with an error if this ever fails.
 - **Reruns are byte-identical.** We checked with file hashes.
 - **Counting rule.** A row can have several problems, so counts may overlap. Each bad row is counted once in `successful_records`. Warnings do not count against a row.
-- **Tests.** 100 automated tests, all passing in about 2 seconds. They cover the readers, column-name matching and schema drift, each quality rule, duplicates, merge edge cases (a customer with no order row, a customer missing from the CRM), segment boundaries, every number above on the real data, and byte-identical reruns.
+- **Tests.** 124 automated tests, all passing in about 2 seconds. They cover the readers, column-name matching and schema drift, each quality rule, duplicates, merge edge cases (a customer with no order row, a customer missing from the CRM), segment boundaries, every number above on the real data, and byte-identical reruns.
 
 ## 8. Outputs reference
 
@@ -272,10 +272,37 @@ Every requirement from the problem statement, and where to find it.
 | Customer count by city | Done | `customer_count_by_city.json` |
 | Bonus: configuration-driven pipeline (`input_sources` list) | Done, same key as the example | `config/pipeline.json` |
 | Bonus: logging | Done | console + `logs/pipeline.log` |
-| Bonus: unit tests | Done (100 tests) | `tests/` |
+| Bonus: unit tests | Done (124 tests, run by CI on every push) | `tests/` |
 | Bonus: Streamlit dashboard with revenue by city, customer segments and DQ metrics | Done, plus three extra pages: pipeline flow, customer lookup, quality & risk | `dashboard/app.py`, `dashboard/pages/` |
 
 Where the output differs from the problem's examples, on purpose:
 - The sample report says 1500 records. The real files contain 1501, because of the duplicate row.
 - The sample customer names (Amit Sharma and others) don't appear in the real data.
 - The Customer 360 records carry four extra fields so that every blank value can be explained.
+
+## 13. Beyond the brief: chat assistant, database load, streaming, CI
+
+**Ask about this page.** Every dashboard page ends with a chat box backed by Groq (`llama-3.3-70b-versatile`).
+- It sees only what that page shows, plus a glossary of the page's terms. There's no retrieval system to maintain, and a few KB of context per page is plenty.
+- It's instructed to interpret the numbers, cite the values it used, and say when something isn't on the page.
+- Data governance is handled in code, not by trusting the model: emails are never sent, and names are sent only on the customer lookup page.
+- With no API key, or when Groq rate-limits, the chat says so and the page keeps working.
+- To enable it, set `GROQ_API_KEY` in `.streamlit/secrets.toml` or in Streamlit Cloud Secrets.
+
+**Loading into a database safely.** The Customer 360 is upserted into SQLite (`output/warehouse/customer360.db`), keyed on `customer_id`.
+- Unchanged rows are detected by a content hash and left alone.
+- The whole load runs in one transaction, so a failure rolls back completely.
+- On a rerun, 0 rows are inserted, 0 updated and 500 left unchanged.
+- An audit table records every load.
+- In production this becomes a `MERGE` into Redshift or Snowflake.
+
+**Incremental processing and a simulated stream.**
+- `python -m stream.producer` writes small batches of order updates. A few bad rows are included on purpose.
+- `python run_stream.py` processes only files newer than its watermark, using the same quality rules, and updates just the affected customers. It then refreshes the curated files and reports, so the dashboard reflects the stream.
+- The watermark moves in the same transaction as the data, which gives exactly-once processing per file.
+- Stream rows with any issue are quarantined rather than nulled, so a bad value can never overwrite a good one already in the database.
+- In production the inbox would be an S3 prefix or a Kafka/Kinesis topic, with the same logic.
+
+**CI.** GitHub Actions runs lint, a pipeline smoke run, the test suite (124 tests) and a Docker build-and-run on every push. It publishes the quality report as a downloadable artifact.
+
+**Known limit:** a stream update that fixes a value doesn't clear that customer's earlier quality flag until the next full batch run.

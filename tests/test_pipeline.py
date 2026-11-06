@@ -82,9 +82,16 @@ def test_customer_360_has_one_row_per_customer(real_run):
 
 
 def _hash_tree(folder) -> dict[str, str]:
-    """sha256 of every file under folder, keyed by relative path."""
+    """sha256 of every file under folder, keyed by relative path.
+
+    output/warehouse/ is skipped on purpose: the SQLite file changes on every run
+    (a new load_runs audit row, loaded_at). Its idempotency is tested in test_load.py
+    by counts instead (rerun -> 0 inserted, 0 updated, 500 unchanged).
+    """
     hashes = {}
     for dirpath, _, files in os.walk(folder):
+        if os.path.relpath(dirpath, folder).split(os.sep)[0] == "warehouse":
+            continue
         for f in files:
             p = os.path.join(dirpath, f)
             with open(p, "rb") as fh:
