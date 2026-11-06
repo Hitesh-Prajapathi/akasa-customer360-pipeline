@@ -4,8 +4,8 @@ import shutil
 
 import duckdb
 import pytest
-
 from conftest import DATA_DIR, write_config
+
 from customer360.pipeline import run
 from customer360.standardize import SchemaDriftError, resolve_columns, standardize
 

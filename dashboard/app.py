@@ -2,9 +2,9 @@
 
 Run from the project root:  streamlit run dashboard/app.py
 
-Data quality numbers come from the pipeline's JSON reports. Every business view
-(city, segments, top customers, support) is computed from customer_360.parquet with
-the same rules as customer360/insights.py, so the sidebar city filter applies to all of them.
+Data quality numbers and each customer's segment come from the pipeline's JSON reports.
+The business views (city, segments, top customers, support) are aggregated from
+customer_360.parquet so the sidebar city filter applies to all of them.
 """
 import json
 import os
@@ -71,25 +71,6 @@ def load_report(reports_dir: str, name: str):
         return json.load(f)
 
 
-# ---------- business rules (mirror customer360/insights.py) ----------
-
-def add_segment(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
-    """NULL revenue -> Unknown, > gold_above -> Gold, >= silver_from -> Silver, else Bronze."""
-    gold_above = cfg["segments"]["gold_above"]
-    silver_from = cfg["segments"]["silver_from"]
-
-    def segment(value):
-        if pd.isna(value):
-            return "Unknown"
-        if value > gold_above:
-            return "Gold"
-        if value >= silver_from:
-            return "Silver"
-        return "Bronze"
-
-    return df.assign(segment=df["lifetime_value"].map(segment))
-
-
 # ---------- sections ----------
 
 def section_header() -> None:
@@ -120,11 +101,12 @@ def section_data_quality(reports_dir: str) -> None:
     # Source status is optional (only newer pipeline versions write it).
     status = report.get("source_status")
     if status:
-        failed = {src: s for src, s in status.items() if s != "ok"}
-        if failed:
-            for src, s in failed.items():
+        for src, s in status.items():
+            if s.startswith("failed"):
                 st.error(f"Source **{src}**: {s}")
-        else:
+            elif s != "ok":
+                st.warning(f"Source **{src}**: {s}")  # loaded, but with schema drift
+        if all(s == "ok" for s in status.values()):
             st.success("All sources loaded: " + ", ".join(status))
 
     left, right = st.columns(2)
@@ -178,8 +160,7 @@ def section_segments(df: pd.DataFrame, cfg: dict) -> None:
     st.caption(f"Gold: revenue > {seg['gold_above']:,} · Silver: {seg['silver_from']:,} to "
                f"{seg['gold_above']:,} · Bronze: below {seg['silver_from']:,} · Unknown: no order data")
 
-    summary = (add_segment(df, cfg)
-               .groupby("segment")
+    summary = (df.groupby("segment")
                .agg(customer_count=("customer_id", "count"), total_revenue=("lifetime_value", "sum"))
                .reindex(SEGMENT_ORDER, fill_value=0)  # fixed business order, empty segments shown as 0
                .reset_index())
@@ -238,6 +219,11 @@ def main() -> None:
         st.stop()
 
     c360 = load_customer_360(str(c360_path(cfg)))
+    # Segments come from the pipeline's own report, so the Gold/Silver/Bronze rule
+    # lives in exactly one place (customer360/insights.py).
+    segments = pd.DataFrame(load_report(reports_dir, "customer_segments") or [], columns=["customer_id", "segment"])
+    c360 = c360.merge(segments[["customer_id", "segment"]], on="customer_id", how="left")
+    c360["segment"] = c360["segment"].fillna("Unknown")
     cities = sorted(c360["city"].unique())
     selected = st.sidebar.multiselect("City", cities, placeholder="All cities")
     st.sidebar.caption("The city filter applies to every section below Data quality.")

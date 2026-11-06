@@ -242,3 +242,35 @@ At millions of rows, or around 5 TB a day, the logic stays and the machinery cha
 - A CI workflow
 - Simulated streaming of new orders
 - Deploying the dashboard to Streamlit Community Cloud
+
+## 12. Requirements checklist
+
+Every requirement from the problem statement, and where to find it.
+
+| Requirement (from the problem statement) | Status | Where |
+|---|---|---|
+| Ingest JSON, CSV and XML | Done | `customer360/readers.py`, one reader class per format |
+| Standardise schemas (`cust_id`, `customerId` → `customer_id`) | Done, plus alias matching for future variants | `customer360/standardize.py`, `schema_aliases` in config |
+| Merge into a unified customer profile on `customer_id` | Done (500 customers) | `output/curated/customer_360.json` (and `.parquet`) |
+| Customer 360 fields as in the expected example | Done, same 10 fields in the same order, plus `in_crm`, `in_orders`, `in_support`, `dq_flags` | `customer360/merge.py` |
+| DQ challenge: duplicate CRM records | Done (C0105) | quarantined, `dq_issues.json` |
+| DQ challenge: invalid emails | Done (3) | email blanked, flagged |
+| DQ challenge: missing values | Done (C0310 order count, blank support ID) | flagged / quarantined |
+| DQ challenge: orders missing | Done. Customers without an order row are kept with `in_orders = false`. The real data has none, so a test covers it | `merge.py`, `tests/test_merge.py` |
+| DQ challenge: invalid customer IDs | Done (1) | quarantined, with a suggested ID |
+| Step 3 checks: duplicates, invalid emails, missing mandatory fields, negative revenue, invalid IDs | Done, all five, plus type errors and a cross-field warning | `customer360/quality.py` |
+| Step 3 report with `total_records`, `duplicates`, `invalid_emails`, `missing_fields`, `successful_records` | Done (1501 / 1 / 3 / 1 / 1494), plus a per-source breakdown | `output/reports/dq_report.json` |
+| Top 10 customers by revenue | Done | `top_customers_by_revenue.json` |
+| Segmentation: Gold > 100000, Silver 50000–100000, Bronze < 50000 | Done (318 / 101 / 80, plus 1 Unknown) | `customer_segments.json`, `segment_summary.json` |
+| Customers with more than 5 tickets | Done (268) | `high_support_customers.json` |
+| Revenue by city | Done | `revenue_by_city.json` |
+| Customer count by city | Done | `customer_count_by_city.json` |
+| Bonus: configuration-driven pipeline (`input_sources` list) | Done, same key as the example | `config/pipeline.json` |
+| Bonus: logging | Done | console + `logs/pipeline.log` |
+| Bonus: unit tests | Done (100 tests) | `tests/` |
+| Bonus: Streamlit dashboard with revenue by city, customer segments and DQ metrics | Done, plus top 10, high-support and a city filter | `dashboard/app.py` |
+
+Where the output differs from the problem's examples, on purpose:
+- The sample report says 1500 records. The real files contain 1501, because of the duplicate row.
+- The sample customer names (Amit Sharma and others) don't appear in the real data.
+- The Customer 360 records carry four extra fields so that every blank value can be explained.

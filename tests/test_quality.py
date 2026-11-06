@@ -1,7 +1,7 @@
 """Step 3: each data-quality rule, the clean/quarantine split, dedupe and the DQ report."""
-import pytest
 
 from conftest import make_std_table
+
 from customer360.quality import build_dq_report, flag_issues, split_clean_quarantine
 
 CRM_CFG = {

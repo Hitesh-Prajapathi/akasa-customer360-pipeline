@@ -1,7 +1,7 @@
 """Step 1 (load): one reader class per file format, all producing the same raw shape.
 
 Every reader returns the source columns as text (exactly as found) plus three
-ingestion columns: _source_file, _ingested_at (file modification time) and
+ingestion columns: _source_file, _ingested_at (file modification time, UTC) and
 _row_num (position in the file, used later to pick the latest duplicate).
 Adding a new format = adding one subclass and one entry in READERS.
 """
@@ -26,13 +26,14 @@ class BaseReader(ABC):
         """Load the file into a DuckDB table named `table` and return its row count."""
         con.register("_loaded", self._load(con))
         # File mtime (not wall-clock time) keeps reruns on the same file identical.
-        ingested_at = datetime.fromtimestamp(os.path.getmtime(self.path), tz=timezone.utc)
+        # Stored as a plain UTC TIMESTAMP so reading it back needs no timezone library.
+        ingested_at = datetime.fromtimestamp(os.path.getmtime(self.path), tz=timezone.utc).replace(tzinfo=None)
         con.execute(
             f"""
             CREATE OR REPLACE TABLE {table} AS
             SELECT *,
                    ? AS _source_file,
-                   ?::TIMESTAMPTZ AS _ingested_at,
+                   ?::TIMESTAMP AS _ingested_at,   -- UTC
                    ROW_NUMBER() OVER () AS _row_num   -- scan order = file order
             FROM _loaded
             """,

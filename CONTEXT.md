@@ -165,25 +165,25 @@ config/pipeline.json ──► run_pipeline.py
    dashboard/app.py (M2) reads curated + reports
 ```
 
-Proposed files (confirm or adjust in D12):
+Actual files:
 
 ```
-config/pipeline.json      sources, column maps, validation rules, segment thresholds, paths
-src/customer360/
-  readers.py              BaseReader + JsonReader / CsvReader / XmlReader + get_reader()
-  standardize.py          column rename map, type casting
-  quality.py              DQ rules → issue flags, quarantine split, dq_report
-  merge.py                build Customer 360
-  insights.py             the 5 insights
-  logger.py               logging setup
-  pipeline.py             orchestrates the steps, logs counts
-run_pipeline.py           entry point: `python run_pipeline.py [--config path]`
-tests/                    M2
-dashboard/app.py          M2
-notebooks/01_eda.ipynb    EDA (done)
-Dockerfile · docker-compose.yml · .dockerignore · .gitignore
+config/pipeline.json      paths, input_sources, schema_aliases, per-source fields/types/rules, thresholds
+customer360/
+  readers.py              BaseReader + Json/Csv/XmlReader + get_reader()   (step 1)
+  standardize.py          resolve_columns (aliases), drift handling, SchemaDriftError (step 2)
+  quality.py              DQ flags, dedupe, clean/quarantine split, dq_report (step 3)
+  merge.py                Customer 360 full outer join + presence flags (step 4)
+  insights.py             6 report files for the 5 insights (step 5)
+  pipeline.py             orchestration, reconciliation, source_status, timings
+  logger.py               console + logs/pipeline.log
+run_pipeline.py           entry point: python run_pipeline.py [--config path]
+dashboard/app.py          Streamlit; runs the pipeline if output/ is missing
+tests/                    100 pytest tests
+notebooks/01_eda.ipynb    EDA, sections 1-11
+Dockerfile · docker-compose.yml (pipeline, dashboard) · requirements(-dev).txt
+DOCUMENTATION.md (reviewers) · README.md (Claude's log) · readme_by_me (user's) · CONTEXT.md
 output/  logs/            generated, git-ignored
-README.md (Claude) · readme_by_me (mine, Claude never edits) · CONTEXT.md · requirements.txt
 ```
 
 Each step reads only the previous step's output. A requirement change touches one module.

@@ -5,8 +5,8 @@ import os
 
 import duckdb
 import pytest
-
 from conftest import DATA_DIR, write_config
+
 from customer360.pipeline import run
 
 

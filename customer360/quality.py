@@ -152,6 +152,6 @@ def build_dq_report(con, flagged_tables: dict[str, str], warning_names: set[str]
     ).fetchall()
     keys = ["total_records", "duplicates", "invalid_emails", "missing_fields", "negative_revenue",
             "invalid_customer_ids", "invalid_types", "warnings", "successful_records"]
-    by_source = {r[0]: dict(zip(keys, r[1:])) for r in rows}
+    by_source = {r[0]: dict(zip(keys, r[1:], strict=True)) for r in rows}
     totals = {k: sum(s[k] for s in by_source.values()) for k in keys}
     return {**totals, "by_source": by_source}

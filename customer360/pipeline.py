@@ -13,8 +13,13 @@ import duckdb
 from .insights import generate_insights
 from .logger import setup_logging
 from .merge import build_customer_360
-from .quality import (REJECT_ISSUES, build_dq_report, flag_issues, register_email_udf,
-                      split_clean_quarantine)
+from .quality import (
+    REJECT_ISSUES,
+    build_dq_report,
+    flag_issues,
+    register_email_udf,
+    split_clean_quarantine,
+)
 from .readers import get_reader
 from .standardize import SchemaDriftError, standardize
 
