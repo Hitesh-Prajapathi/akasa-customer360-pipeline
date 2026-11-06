@@ -1,0 +1,23 @@
+services:
+  # Batch job: runs the pipeline once and exits. Results and logs land on the host;
+  # inputs are mounted read-only so new files can be dropped in without a rebuild.
+  pipeline:
+    build: .
+    image: customer360
+    volumes:
+      - ./DE-Customer360:/app/DE-Customer360:ro
+      - ./output:/app/output
+      - ./logs:/app/logs
+
+  # Streamlit dashboard: same image, starts only after the pipeline finished successfully,
+  # reads the pipeline output read-only. Open http://localhost:8501
+  dashboard:
+    image: customer360
+    command: ["streamlit", "run", "dashboard/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./output:/app/output:ro
+    depends_on:
+      pipeline:
+        condition: service_completed_successfully

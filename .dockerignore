@@ -1,0 +1,11 @@
+# Local environment and generated artefacts (inputs in DE-Customer360/ are kept)
+.venv
+output
+logs
+.git
+**/__pycache__
+**/*.pyc
+.pytest_cache
+notebooks/.ipynb_checkpoints
+**/.ipynb_checkpoints
+**/.DS_Store

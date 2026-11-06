@@ -1,0 +1,5 @@
+# Runtime dependencies (pipeline + dashboard)
+duckdb==2.0.0
+pandas==3.1.1
+email-validator==2.3.0
+streamlit==1.67.0

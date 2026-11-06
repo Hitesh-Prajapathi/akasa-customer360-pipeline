@@ -1,0 +1,48 @@
+{
+  "input_dir": "DE-Customer360",
+  "output_dir": "output",
+  "log_file": "logs/pipeline.log",
+  "input_sources": [
+    "crm_customers.json",
+    "orders.csv",
+    "support_tickets.xml"
+  ],
+  "sources": {
+    "crm_customers.json": {
+      "name": "crm",
+      "column_map": {"customer_id": "customer_id", "name": "name", "email": "email", "city": "city", "registration_date": "registration_date"},
+      "types": {"registration_date": "DATE"},
+      "required": ["customer_id", "name", "email", "city", "registration_date"]
+    },
+    "orders.csv": {
+      "name": "orders",
+      "column_map": {"cust_id": "customer_id", "total_orders": "total_orders", "lifetime_value": "lifetime_value", "last_order_date": "last_order_date"},
+      "types": {"total_orders": "INTEGER", "lifetime_value": "BIGINT", "last_order_date": "DATE"},
+      "required": ["customer_id", "total_orders", "lifetime_value", "last_order_date"],
+      "non_negative": ["total_orders", "lifetime_value"]
+    },
+    "support_tickets.xml": {
+      "name": "support",
+      "column_map": {"customerId": "customer_id", "tickets": "support_tickets", "lastTicketDate": "last_ticket_date"},
+      "types": {"support_tickets": "INTEGER", "last_ticket_date": "DATE"},
+      "required": ["customer_id", "support_tickets", "last_ticket_date"],
+      "non_negative": ["support_tickets"],
+      "warning_rules": {
+        "ticket_date_without_tickets": "TRY_CAST(support_tickets AS INTEGER) = 0 AND last_ticket_date IS NOT NULL"
+      }
+    }
+  },
+  "validation": {
+    "customer_id_pattern": "^C\\d{4}$",
+    "email_check_deliverability": false
+  },
+  "dedupe_keep": "latest",
+  "segments": {
+    "gold_above": 100000,
+    "silver_from": 50000
+  },
+  "insights": {
+    "top_n": 10,
+    "high_support_above": 5
+  }
+}
