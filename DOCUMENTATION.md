@@ -282,7 +282,7 @@ Where the output differs from the problem's examples, on purpose:
 
 ## 13. Beyond the brief: chat assistant, database load, streaming, CI
 
-**Ask about this page.** Every dashboard page ends with a chat box backed by Groq (`llama-3.3-70b-versatile`).
+**Ask about this page.** Every dashboard page ends with a chat box backed by Groq (`openai/gpt-oss-120b`).
 - It sees only what that page shows, plus a glossary of the page's terms. There's no retrieval system to maintain, and a few KB of context per page is plenty.
 - It's instructed to interpret the numbers, cite the values it used, and say when something isn't on the page.
 - Data governance is handled in code, not by trusting the model: emails are never sent, and names are sent only on the customer lookup page.

@@ -125,6 +125,33 @@ def recency(c360: pd.DataFrame):
     return c360.assign(days_since=(ref - dates).dt.days).dropna(subset=["days_since"]), ref
 
 
+ISSUE_CODE_TO_KPI = {
+    "duplicate": "duplicates", "invalid_customer_id": "invalid_customer_ids", "invalid_email": "invalid_emails",
+    "missing_total_orders": "missing_fields", "negative_lifetime_value": "negative_revenue",
+    "ticket_date_without_tickets": "warnings (0 tickets but a last ticket date)",
+}
+
+
+def gap_breakdown(dq_report: dict) -> dict:
+    """Why successful_records < total_records, with counts computed in code.
+
+    Assumes each failing row has one error issue (true for this data); the check below
+    flags it if categories ever overlap so the model is told not to sum them blindly.
+    """
+    r = dq_report or {}
+    quarantined = {k: r.get(k, 0) for k in ("duplicates", "invalid_customer_ids")}
+    kept_with_null = {k: r.get(k, 0) for k in ("invalid_emails", "missing_fields", "negative_revenue", "invalid_types")}
+    gap = r.get("total_records", 0) - r.get("successful_records", 0)
+    return {
+        "rows_not_successful": gap,
+        "quarantined_rows (removed from clean layer)": quarantined,
+        "kept_rows_with_value_set_to_null": kept_with_null,
+        "categories_sum": sum(quarantined.values()) + sum(kept_with_null.values()),
+        "categories_overlap": sum(quarantined.values()) + sum(kept_with_null.values()) != gap,
+        "warnings_not_counted": r.get("warnings", 0),
+    }
+
+
 # ---------- one context builder per page ----------
 
 def overview_context(df: pd.DataFrame, dq_report: dict | None, dq_issues: list | None,
@@ -140,11 +167,14 @@ def overview_context(df: pd.DataFrame, dq_report: dict | None, dq_issues: list |
         "note": "Data quality figures cover all data; every other section reflects the city filter.",
         "data_quality": {
             "kpis": {k: dq_report.get(k, 0) for k in keys},
+            # Arithmetic is done here, not by the model: the gap explained row by row.
+            "gap_explained": gap_breakdown(dq_report),
             "by_source": dq_report.get("by_source", {}),
             "reconciliation": dq_report.get("reconciliation", {}),
             "source_status": dq_report.get("source_status", {}),
             "issue_rows_total": len(dq_issues or []),
-            "issue_counts": records(issue_counts(dq_issues)),
+            # Row-level issue codes are the SAME problems the kpis count, just named per field.
+            "issue_code_to_kpi": ISSUE_CODE_TO_KPI,
             "issue_rows_sample": records(pd.DataFrame(dq_issues or []), 20),
         },
         "customers_in_view": len(df),
@@ -232,7 +262,7 @@ def build_glossary(cfg: dict) -> dict:
     threshold = ins.get("high_support_above", 5)
     g = {
         "total_records": "Rows read from all source files before any cleaning.",
-        "successful_records": "Rows that passed validation and reached the clean layer (warnings still count as successful).",
+        "successful_records": "Rows with NO error-level issue (duplicate, invalid ID, invalid email, missing field, negative or untypable value). Warnings alone do not count against a row. Note: total minus successful (7 here) is NOT the quarantine count: only reject-level rows (duplicates, invalid IDs) are quarantined; rows with a broken field stay in the clean layer with that value set to NULL, but are still not counted as successful.",
         "duplicates": "Rows repeating a customer ID already seen in the same source; one copy is kept, the rest are quarantined.",
         "invalid_emails": "CRM rows whose email is not a valid address; the row is kept but the email is set to NULL.",
         "missing_fields": "Rows with a required field blank; the value becomes NULL (unknown).",

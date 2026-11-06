@@ -217,6 +217,8 @@ On a change: (1) log it here, (2) find the lowest affected step, (3) change only
 | Round 1 | D9 ingestion-order dedupe with hash | Production pattern: same as replayed/double-loaded batches | raw, quality |
 | Round 1 | D10 email-validator | Handles real-world email forms better than a regex | quality |
 | Round 1 | D15 Docker deliverable, py3.12 | OS-independent for evaluators | packaging |
+| M3 | Chat model → `openai/gpt-oss-120b` (reasoning_effort=low, max_tokens 2000). `llama-3.3-70b-versatile` returned model_not_found for this key although the docs list it | Live test with the real key | chat.py |
+| M3 | Live test found wrong arithmetic (gap of 7 = all quarantined; double counting). Fix: the glossary defines successful_records precisely; `gap_explained` is computed in code; issue-code-to-KPI map; prompt says use the precomputed figures and only refer to the 4 real pages | Compute in code, let the LLM explain | page_context.py, chat.py |
 | M3 | D16 chatbot context = current page's data + glossary only (no vector DB) | Focused, small, explainable | dashboard |
 | M3 | D17 "Ask about this page" panel at the bottom of each page | The question sits next to the charts | dashboard |
 | M3 | D18 no emails ever sent to the LLM; names only on the lookup page; stripped in code | Data governance for AI | dashboard |

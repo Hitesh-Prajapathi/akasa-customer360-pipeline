@@ -153,6 +153,8 @@ def test_stream_answer_yields_text_chunks():
 @pytest.fixture
 def no_key(monkeypatch):
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    # Ignore a developer's real .streamlit/secrets.toml so this test means "no key configured".
+    monkeypatch.setattr(chat, "_setting", lambda name: None)
     monkeypatch.chdir(ROOT)
 
 

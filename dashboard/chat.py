@@ -9,8 +9,9 @@ import os
 
 import streamlit as st
 
-# Groq production model (console.groq.com/docs/models); override with GROQ_MODEL in secrets/env.
-GROQ_MODEL = "llama-3.3-70b-versatile"
+# Groq model; override with GROQ_MODEL in secrets/env. Groq retires models often, so the
+# default was chosen from what the account can actually call (client.models.list()).
+GROQ_MODEL = "openai/gpt-oss-120b"
 MAX_TURNS = 6  # user+assistant pairs of history sent with each question
 
 SYSTEM_TEMPLATE = """You are an analyst assistant for the Customer 360 dashboard \
@@ -25,7 +26,12 @@ Never invent numbers, customers or causes.
 or for data quality, why they matter, and point out notable patterns or outliers.
 - Cite the specific metrics and values you used (e.g. "duplicates = 1 in crm").
 - Keep it moderate: a few short paragraphs or bullet points. Not a one-liner, not an essay.
-- Do not ask for or reveal email addresses; they are deliberately not provided.
+- Email addresses are deliberately never given to you (data governance). If asked for one, say that \
+emails are withheld from the assistant on purpose and can be seen only by authorised users in the source data.
+- The dashboard has exactly four pages: Overview, Pipeline flow, Customer lookup, Quality & risk. \
+Only refer to these pages; never invent other pages, reports or data sources.
+- When a context contains precomputed figures (e.g. "gap_explained"), use them as given rather \
+than re-adding numbers yourself, and never count the same issue twice under two names.
 - Tables may be capped: "total_rows" is the full count, "rows" only the first rows shown.
 
 PAGE CONTEXT (JSON):
@@ -67,12 +73,18 @@ def _get_client():
 def _stream_answer(messages: list[dict], client=None):
     """Yield the answer text chunk by chunk (Groq stream=True)."""
     client = client or _get_client()
+    model = _setting("GROQ_MODEL") or GROQ_MODEL
+    extra = {}
+    if model.startswith("openai/gpt-oss"):
+        # Reasoning model: keep its hidden thinking short so the budget goes to the answer.
+        extra["reasoning_effort"] = "low"
     stream = client.chat.completions.create(
-        model=_setting("GROQ_MODEL") or GROQ_MODEL,
+        model=model,
         messages=messages,
         temperature=0.2,
-        max_tokens=700,
+        max_tokens=2000,  # includes the reasoning tokens of reasoning models
         stream=True,
+        **extra,
     )
     for chunk in stream:
         text = chunk.choices[0].delta.content if chunk.choices else None
@@ -85,6 +97,8 @@ def _friendly_error(e: Exception) -> str:
         return "The chat service is busy (rate limit reached). Please wait a moment and try again."
     if type(e).__name__ == "AuthenticationError":
         return "The chat service rejected the API key. Check GROQ_API_KEY."
+    if type(e).__name__ == "NotFoundError":
+        return "The configured chat model is not available on this Groq account. Set GROQ_MODEL to an available model."
     return "The chat service could not answer right now. Please try again shortly."
 
 
