@@ -2,6 +2,9 @@
 
 *This file is kept up to date as the work happens, in plain language. The author's own notes are in `readme_by_me`.*
 
+**Live dashboard:** https://akasa-customer360-pipeline-yleacgfug2v7qqljs5qdbp.streamlit.app/  
+**Code:** https://github.com/Hitesh-Prajapathi/akasa-customer360-pipeline
+
 ## The problem, in one breath
 An online store keeps its customers in three separate systems that never talked to each other. The CRM holds who people are, the order system holds what they spent, and the support desk holds how often they complained. Each system names things differently and stores them in a different format: JSON, CSV and XML. The job is to pull all three together into one clean profile per customer, catch the bad data along the way, and answer a few business questions:
 - Who are the top spenders?
@@ -146,6 +149,7 @@ _How the local setup maps to cloud services._
 | M1 | Deeper EDA found 5 easy-to-miss issues. Baseline built (two helpers worked in parallel on the reports and the Docker setup). All expected numbers matched, reruns are identical, and it runs in Docker. Committed as `v1-baseline` |
 | M2 | Added column-name matching and "degrade, don't die" for broken sources. Four helpers worked in parallel: 100 tests, the dashboard, the reviewer documentation, plus logging upgrades. The full Docker stack works. Committed as `v2-brownie` |
 | M2+ | Dashboard grew from one page to four: Overview, Pipeline flow (row counts at every stage), Customer lookup (one customer across all three systems, raw records side by side), Quality & risk (issue drill-down, quarantine review, high-value customers with many tickets). Three helpers built the three new pages at the same time, one file each |
+| M2.6 | Published the code on GitHub and deployed the dashboard on Streamlit Community Cloud. The hosted copy runs the full pipeline itself on first load |
 
 ## What we'd do next
 _Filled in at the end._

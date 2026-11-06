@@ -97,7 +97,7 @@ Docs: `DOCUMENTATION.md` (reviewer-facing, polished). `README.md` (running log).
 | M2.3 | Streamlit dashboard: DQ KPI tiles, revenue by city, customers by city, segments, top 10, high-support, DQ issues table, city filter. Runs the pipeline itself if `output/` is missing (needed for cloud) | Agent B | `dashboard/` only |
 | M2.4 | Logging: per-step timings, unmapped-column warnings | Claude | `pipeline.py` |
 | M2.5 | Review, README, commit `v2-brownie` | Claude | |
-| M2.6 | Optional: deploy to Streamlit Community Cloud (needs the user's GitHub; private repo because the problem statement is in it) | User + Claude | |
+| M2.6 | ✅ Deployed: https://akasa-customer360-pipeline-yleacgfug2v7qqljs5qdbp.streamlit.app/ · repo https://github.com/Hitesh-Prajapathi/akasa-customer360-pipeline (public, by the user's choice) | User + Claude | |
 
 Exit: tests green, `docker compose up` shows the dashboard at :8501, numbers on the dashboard equal `dq_report.json`.
 

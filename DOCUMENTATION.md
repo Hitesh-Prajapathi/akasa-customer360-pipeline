@@ -2,6 +2,11 @@
 
 A small, careful data pipeline built for the Akasa Air data engineering assessment. This page explains what it does, how to run it, how it works, and how it would grow in production.
 
+**Live dashboard:** https://akasa-customer360-pipeline-yleacgfug2v7qqljs5qdbp.streamlit.app/  
+**Code:** https://github.com/Hitesh-Prajapathi/akasa-customer360-pipeline
+
+The hosted dashboard runs the whole pipeline on first load, so it's a live run, not a static picture. If the page is asleep, it takes a few seconds to wake up.
+
 ## 1. The problem and what you get
 
 An online store keeps its customers in three systems that never talked to each other.
