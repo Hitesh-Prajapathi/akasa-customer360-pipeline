@@ -79,12 +79,33 @@ One command runs five steps, and each step only reads what the previous one wrot
 - **Reporting.** Each business question is one short SQL query.
 - **Logging.** Everything is logged to the screen and to `logs/pipeline.log`.
 
+## Different systems, different column names
+Each system calls the customer something different: `customer_id`, `cust_id`, `customerId`, and tomorrow maybe `c_id` or `Customer ID`. We handle this in two layers, both in the config file rather than the code:
+1. **Tidy, then compare.** Names are lowercased and stripped of underscores, dashes and spaces before comparing. `customerId`, `Customer_ID` and `customer id` all become the same thing and match `customer_id` with no extra rules.
+2. **Known synonyms.** A shared list of aliases catches genuinely different words, such as `cust_id`, `c_id` or `client_id` for the customer, and `ltv` or `revenue` for lifetime value. A source can also pin an exact mapping if it needs to.
+
+If two columns could both be the customer ID, we stop rather than guess. A wrong guess would mix up customers silently. Unknown extra columns are logged so someone notices the source changed.
+
+## When a source changes shape: degrade, don't die
+A pipeline that receives data continuously can't afford to stop because one feed changed. So:
+- **A new column appears:** logged, ignored, and kept in the raw copy.
+- **A non-essential column disappears:** filled with blanks, every row flagged, and processing carries on.
+- **The customer ID column disappears:** that source's whole batch is set aside untouched, ready to replay once the mapping is fixed. The other sources still go through, and the report marks that source as failed. We tested it: with the ID column removed from the orders file, the run still finished, with 500 customers and orders marked failed.
+
+In a real streaming setup this becomes a schema registry (which decides what changes are allowed), a dead-letter queue (where bad batches wait), and a per-source circuit breaker (which pauses only the broken feed).
+
 ## How to run it
 **With Docker (recommended, works on any OS):**
 ```
 docker compose run --rm pipeline
 ```
 Results appear in `output/`, logs in `logs/`.
+
+**The dashboard:** `docker compose up`, then open http://localhost:8501. The pipeline runs first and the dashboard starts once it has finished. Without Docker, run `streamlit run dashboard/app.py`. If there are no results yet, the dashboard runs the pipeline itself, so a hosted copy is a live pipeline, not a static picture.
+
+**The tests:** `pip install -r requirements-dev.txt`, then `pytest`. That runs 100 tests in about 2 seconds.
+
+The polished write-up for reviewers is in `DOCUMENTATION.md`.
 
 **Without Docker (needs Python 3.12):**
 ```
@@ -123,6 +144,7 @@ _How the local setup maps to cloud services._
 | Start | Read the problem, profiled all three files, found 7 planted data issues, drafted the plan |
 | Round 1 | All 15 design decisions settled. EDA notebook confirmed nothing can be safely imputed |
 | M1 | Deeper EDA found 5 easy-to-miss issues. Baseline built (two helpers worked in parallel on the reports and the Docker setup). All expected numbers matched, reruns are identical, and it runs in Docker. Committed as `v1-baseline` |
+| M2 | Added column-name matching and "degrade, don't die" for broken sources. Four helpers worked in parallel: 100 tests, the dashboard, the reviewer documentation, plus logging upgrades. The full Docker stack works. Committed as `v2-brownie` |
 
 ## What we'd do next
 _Filled in at the end._

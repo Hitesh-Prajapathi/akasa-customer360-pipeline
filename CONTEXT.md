@@ -83,11 +83,23 @@ Covers every mandatory deliverable. Config and logging are built in from the sta
 
 **M1 exit check:** a clean run from scratch matches the section 2 numbers, a second run gives identical files, and every step 1–5 deliverable exists as a file.
 
-### M2, Brownie points (after the M1 commit)
+### M2, Brownie points: ✅ DONE (except optional M2.6 deploy), tag `v2-brownie`
 
-- Unit tests (pytest): readers, standardisation, each DQ rule, merge with a missing order row, segment boundaries.
-- Streamlit dashboard: revenue by city, segment split, DQ metrics.
-- Expanded logging (per-step timings, counts reconciliation).
+Verified: 100 tests pass (~2s); `docker compose up` shows the pipeline exit 0, then the dashboard healthy on :8501; dashboard tiles = dq_report. Renaming `cust_id` → `C_ID` gives the same numbers. Dropping the ID column quarantines the orders batch and the run still completes.
+Config shape changed: per-source `fields` + `key_fields` (+ optional `column_map` overrides), global `schema_aliases`.
+Known nit: reading TIMESTAMPTZ (`_ingested_at`) into Python needs `pytz` (not installed). Nothing in the app does this; tests exclude the column.
+Docs: `DOCUMENTATION.md` (reviewer-facing, polished). `README.md` (running log). `readme_by_me` (user's own).
+
+| # | Item | Owner | Files |
+|---|---|---|---|
+| M2.1 | **Alias-based column mapping**: global `schema_aliases` (canonical → known variants), names normalised (lowercase, strip `_`/space/`-`), explicit `column_map` still wins. Error on 0 or >1 matches, warning on unmapped extra columns | Claude | `standardize.py`, config |
+| M2.2 | pytest suite: readers (empty XML element, CRLF), standardise (aliases, drift error), each DQ rule, dedupe latest/first + exact/conflict, suggested ID, merge with missing order row + not-in-CRM customer, segment boundaries, end-to-end acceptance numbers, rerun idempotency | Agent A | `tests/` only |
+| M2.3 | Streamlit dashboard: DQ KPI tiles, revenue by city, customers by city, segments, top 10, high-support, DQ issues table, city filter. Runs the pipeline itself if `output/` is missing (needed for cloud) | Agent B | `dashboard/` only |
+| M2.4 | Logging: per-step timings, unmapped-column warnings | Claude | `pipeline.py` |
+| M2.5 | Review, README, commit `v2-brownie` | Claude | |
+| M2.6 | Optional: deploy to Streamlit Community Cloud (needs the user's GitHub; private repo because the problem statement is in it) | User + Claude | |
+
+Exit: tests green, `docker compose up` shows the dashboard at :8501, numbers on the dashboard equal `dq_report.json`.
 
 ### M3, Hardening and upgrades, one commit each, pick by time
 

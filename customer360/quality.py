@@ -12,7 +12,7 @@ Nothing is silently dropped: every row ends up in exactly one of clean / quarant
 import duckdb
 from email_validator import EmailNotValidError, validate_email
 
-REJECT_ISSUES = ["invalid_customer_id", "duplicate"]
+REJECT_ISSUES = ["invalid_customer_id", "duplicate", "schema_drift"]
 
 
 def _sql_str(s: str) -> str:
@@ -40,7 +40,7 @@ def flag_issues(con, std_table: str, out_table: str, src_cfg: dict, cfg: dict) -
 
     checks.append((f"customer_id IS NULL OR NOT regexp_full_match(customer_id, {pattern})", "invalid_customer_id"))
     checks.append(("_dup_rank > 1", "duplicate"))
-    if "email" in src_cfg["column_map"].values():
+    if "email" in src_cfg["fields"]:
         checks.append(("email IS NOT NULL AND NOT is_valid_email(email)", "invalid_email"))
     for col in src_cfg["required"]:
         if col != "customer_id":  # a missing ID is already invalid_customer_id
@@ -53,7 +53,7 @@ def flag_issues(con, std_table: str, out_table: str, src_cfg: dict, cfg: dict) -
         checks.append((cond, name))
 
     issue_list = ", ".join(f"CASE WHEN {cond} THEN '{name}' END" for cond, name in checks)
-    business_cols = [c for c in src_cfg["column_map"].values()]
+    business_cols = list(src_cfg["fields"])
     # Most recently ingested copy wins (last-write-wins) unless config says "first".
     order = "_ingested_at DESC, _row_num DESC" if cfg.get("dedupe_keep", "latest") == "latest" else "_ingested_at, _row_num"
     window = f"PARTITION BY customer_id ORDER BY {order}"
@@ -99,7 +99,7 @@ def split_clean_quarantine(con, flagged_table: str, clean_table: str, quarantine
     types = src_cfg.get("types", {})
 
     cols = []
-    for col in src_cfg["column_map"].values():
+    for col in src_cfg["fields"]:
         # Field-level issues that make this particular value untrustworthy
         bad = [f"invalid_type_{col}"]
         if col in src_cfg.get("non_negative", []):
