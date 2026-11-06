@@ -268,7 +268,7 @@ Every requirement from the problem statement, and where to find it.
 | Bonus: configuration-driven pipeline (`input_sources` list) | Done, same key as the example | `config/pipeline.json` |
 | Bonus: logging | Done | console + `logs/pipeline.log` |
 | Bonus: unit tests | Done (100 tests) | `tests/` |
-| Bonus: Streamlit dashboard with revenue by city, customer segments and DQ metrics | Done, plus top 10, high-support and a city filter | `dashboard/app.py` |
+| Bonus: Streamlit dashboard with revenue by city, customer segments and DQ metrics | Done, plus three extra pages: pipeline flow, customer lookup, quality & risk | `dashboard/app.py`, `dashboard/pages/` |
 
 Where the output differs from the problem's examples, on purpose:
 - The sample report says 1500 records. The real files contain 1501, because of the duplicate row.

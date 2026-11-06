@@ -145,6 +145,7 @@ _How the local setup maps to cloud services._
 | Round 1 | All 15 design decisions settled. EDA notebook confirmed nothing can be safely imputed |
 | M1 | Deeper EDA found 5 easy-to-miss issues. Baseline built (two helpers worked in parallel on the reports and the Docker setup). All expected numbers matched, reruns are identical, and it runs in Docker. Committed as `v1-baseline` |
 | M2 | Added column-name matching and "degrade, don't die" for broken sources. Four helpers worked in parallel: 100 tests, the dashboard, the reviewer documentation, plus logging upgrades. The full Docker stack works. Committed as `v2-brownie` |
+| M2+ | Dashboard grew from one page to four: Overview, Pipeline flow (row counts at every stage), Customer lookup (one customer across all three systems, raw records side by side), Quality & risk (issue drill-down, quarantine review, high-value customers with many tickets). Three helpers built the three new pages at the same time, one file each |
 
 ## What we'd do next
 _Filled in at the end._
